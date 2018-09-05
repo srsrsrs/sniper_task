@@ -12,13 +12,14 @@ import time
 import numpy as np
 from sqlalchemy import create_engine
 import random
-from common_config import cookie_weibo_com,uid,conn_106_mysql
+from common_config import cookie_weibo_mobile,uid,conn_106_mysql
 
 
 # cookie_jar = requests.utils.cookiejar_from_dict(cookies, cookiejar=None, overwrite=True)
 # opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
 
 ssl._create_default_https_context: ssl._create_unverified_context
+uid = int(str(uid)[6:])
 
 
 def re_match(html, qual):
@@ -47,8 +48,9 @@ def crawl_page_info(url):
             m = random.randint(0, 100 * count) / 100
             print(m)
             time.sleep(m)
-            r = requests.get(url, cookies=cookie_weibo_com)
+            r = requests.get(url, cookies=cookie_weibo_mobile)
             r.headers = {'User-Agent': 'Mozilla/5.0(Windows NT 6.1;WOW64;rv:47.0) Gecko/20100101 Firefox/47.0'}
+            break
         except:
             print('time out and error page is ' + str(url))
             continue
