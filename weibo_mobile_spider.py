@@ -10,7 +10,7 @@ import http.cookiejar
 import pandas as pd
 import time
 import numpy as np
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine,engine
 import random
 from common_config import cookie_weibo_mobile,uid,conn_106_mysql
 
