@@ -45,7 +45,7 @@ def crawl_page_info(url):
         if count > 20:
             break
         try:
-            m = random.randint(0, 100 * count) / 100
+            m = random.randint(0, 100 * count) / 100+0.5
             print(m)
             time.sleep(m)
             r = requests.get(url, cookies=cookie_weibo_mobile)
