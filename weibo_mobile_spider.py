@@ -10,10 +10,9 @@ import http.cookiejar
 import pandas as pd
 import time
 import numpy as np
-from sqlalchemy import create_engine,engine
+from sqlalchemy import create_engine, engine
 import random
-from common_config import cookie_weibo_mobile,uid,conn_106_mysql
-
+from common_config import cookie_weibo_mobile, uid, conn_106_mysql
 
 # cookie_jar = requests.utils.cookiejar_from_dict(cookies, cookiejar=None, overwrite=True)
 # opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
@@ -30,12 +29,11 @@ def re_match(html, qual):
 class WeiboOfExxxx(object):
     def __init__(self):
         self.pages = 0
-        self.url = "https://weibo.cn/u/{}?filter=1&page=0".format(uid)
+        self.url = "https://weibo.cn/u/{}?filter=0&page=0".format(uid)
 
     def pages_add(self):
         self.pages += 1
-        self.url = """https://weibo.cn/u/{}?filter=1&page={}""".format(uid,self.pages)
-        bak_uid = 'https://weibo.cn/felonerroks'
+        self.url = """https://weibo.cn/u/{}?filter=0&page={}""".format(uid, self.pages)
 
 
 def crawl_page_info(url):
@@ -45,7 +43,7 @@ def crawl_page_info(url):
         if count > 20:
             break
         try:
-            m = random.randint(0, 100 * count) / 100+0.5
+            m = random.randint(0, 100 * count) / 100 + 0.5
             print(m)
             time.sleep(m)
             r = requests.get(url, cookies=cookie_weibo_mobile)
@@ -59,6 +57,7 @@ def crawl_page_info(url):
 
 def get_weibo_text(single_text):
     texts = re_match(single_text, r'<div><span class="ctt">(.*?)</span>')
+    weibo_create_time = re_match(single_text, r'<span class="ct">(.*?)&nbsp;')[0]
     if len(texts) != 0:
         texts = texts[0]
     else:
@@ -66,7 +65,7 @@ def get_weibo_text(single_text):
     labels = re_match(texts, r'<.*?>')
     for i in labels:
         texts = texts.replace(i, '')
-    return texts
+    return texts, weibo_create_time
 
 
 def get_comment_info(single_text):
@@ -81,7 +80,7 @@ def get_comment_info(single_text):
 
 
 def get_max_page(html):
-    max_page = int(re_match(html, r'<input type="submit" value="跳页" />&nbsp;1/(.*?)页</div></form></div>')[0])
+    max_page = int(re_match(html, r'<input type="submit" value="跳页" />&nbsp;[1-9]*/(.*?)页</div></form></div>')[0])
     return max_page
 
 
@@ -166,25 +165,29 @@ def comment_pagely_craw(url):
 
 
 def main_func_of_spider():
-    max_page = 1
     page_now = 0
     chicken = WeiboOfExxxx()
     weibo_count = 0
+    max_page = get_max_page(crawl_page_info(chicken.url))
     while page_now < max_page:
         chicken.pages_add()
         url = chicken.url
         html = crawl_page_info(url)
         text_list = re_match(html, r'<div><span class="ctt">.*?</span></div></div><div class="s">')
         main_df = pd.DataFrame()
-        try:
-            max_page = get_max_page(html)
-        except:
-            max_page = max_page
+        if len(text_list) == 0:#即当页全为转发,留待未来处理
+            page_now += 1
+            continue
+        # try:
+        #    max_page = get_max_page(html)
+        # except:
+        #    max_page = max_page
         for single_text in text_list:
-            weibo_content = get_weibo_text(single_text)
+            weibo_content, weibo_create_time = get_weibo_text(single_text)
             comment_count, comment_url = get_comment_info(single_text)
             if comment_count != 0:
                 part_df = comment_pagely_craw(comment_url)
+                part_df.insert(loc=0, column='FuiWeiboCt', value=time_transfer(weibo_create_time))
                 part_df.insert(loc=0, column='FstrWeiboContent', value=weibo_content)
                 part_df.insert(loc=0, column='FuiWeiboId', value=weibo_count)
                 part_df.insert(loc=0, column='FstrUrl', value=comment_url)
@@ -192,13 +195,16 @@ def main_func_of_spider():
                 main_df = pd.concat([main_df, part_df], axis=0)
             else:
                 part_df = pd.DataFrame(
-                    data=[[None, None, None, weibo_content, None, None, None, weibo_count, comment_url]],
-                    columns=['FstrCommentContent', 'FstrCommentMaker', 'FstrReplyTo',
-                             'FstrWeiboContent', 'FuiCommentCt', 'FuiReplyType', 'FuiCommentId',
-                             'FuiWeiboId', 'FstrUrl'], index=range(1))
+                    data=[[comment_url, weibo_count, weibo_content, time_transfer(weibo_create_time), None, None, None,
+                           None, None, None]],
+                    columns=['FstrUrl', 'FuiWeiboId', 'FstrWeiboContent', 'FuiWeiboCt', 'FuiCommentId',
+                             'FstrCommentMaker', 'FstrReplyTo', 'FstrCommentContent', 'FuiCommentCt',
+                             'FuiReplyType']
+                    , index=range(1))
+
                 weibo_count += 1
                 main_df = pd.concat([main_df, part_df], axis=0)
-        #print(main_df)
+        # print(main_df)
         main_df.FstrWeiboContent = main_df.FstrWeiboContent.astype(str)
         local_conn = create_engine(engine.url.URL(**conn_106_mysql))
         main_df.fillna(0).to_sql('t_weibo_info', local_conn, if_exists='append', index=False)
@@ -207,4 +213,3 @@ def main_func_of_spider():
 
 if __name__ == '__main__':
     main_func_of_spider()
-
