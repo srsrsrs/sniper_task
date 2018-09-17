@@ -12,6 +12,7 @@ import time
 import numpy as np
 from sqlalchemy import create_engine, engine
 import random
+import hashlib
 from common_config import cookie_weibo_mobile, uid, conn_106_mysql
 
 # cookie_jar = requests.utils.cookiejar_from_dict(cookies, cookiejar=None, overwrite=True)
@@ -132,7 +133,14 @@ def get_comment_detail(text):
                 except:
                     comment_content = delete_html_info(re_match(comment_body, r'</a> 的赞:(.*)')[0])
                     reply_type = 2  # 回复赞
-        comment_ct = time_transfer(re_match(i, r'<span class="ct">(.*?)&nbsp;')[0])
+        ct_html = re_match(i, r'<span class="ct">(.*?)&nbsp;')[0]
+        if "今天" in ct_html:
+            comment_ct = time_transfer(
+                time.strftime('%m%d') + ct_html.strip('今天'))
+        elif "分钟前" in ct_html:
+            comment_ct = time.mktime() - int(ct_html.strip("分钟前"))*60
+        else:
+            comment_ct = time_transfer(ct_html)
 
         comment_info = {'FuiCommentId': j,
                         'FstrCommentMaker': comment_maker,
@@ -175,7 +183,7 @@ def main_func_of_spider():
         html = crawl_page_info(url)
         text_list = re_match(html, r'<div><span class="ctt">.*?</span></div></div><div class="s">')
         main_df = pd.DataFrame()
-        if len(text_list) == 0:#即当页全为转发,留待未来处理
+        if len(text_list) == 0:  # 即当页全为转发,留待未来处理
             page_now += 1
             continue
         # try:
@@ -206,6 +214,9 @@ def main_func_of_spider():
                 main_df = pd.concat([main_df, part_df], axis=0)
         # print(main_df)
         main_df.FstrWeiboContent = main_df.FstrWeiboContent.astype(str)
+        main_df.FstrWeiboContentHash = main_df.FstrWeiboContent.apply(lambda x: hashlib.md5(x.encode()).hexdigest())
+        main_df.FstrCommentContentHash = main_df.FstrCommentContent.apply(
+            lambda x: hashlib.md5(x.encode()).hexdigest() if x is not None else None)
         local_conn = create_engine(engine.url.URL(**conn_106_mysql))
         main_df.fillna(0).to_sql('t_weibo_info', local_conn, if_exists='append', index=False)
         page_now += 1
