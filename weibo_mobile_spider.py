@@ -138,7 +138,7 @@ def get_comment_detail(text):
             comment_ct = time_transfer(
                 time.strftime('%m%d') + ct_html.strip('今天'))
         elif "分钟前" in ct_html:
-            comment_ct = time.mktime() - int(ct_html.strip("分钟前"))*60
+            comment_ct = time.mktime() - int(ct_html.strip("分钟前")) * 60
         else:
             comment_ct = time_transfer(ct_html)
 
@@ -162,7 +162,7 @@ def comment_pagely_craw(url):
         comment_max_page = int(comment_max_page[0])
         part_df = get_comment_detail(comment_detail)
         for comment_pages in range(comment_max_page - 1):
-            page = comment_pages + 1
+            page = comment_pages + 2
             url_new = re_match(url, r'(.*?)#')[0]
             url_new = url_new + '&page={}'.format(page)
             page_detail = crawl_page_info(url_new)
@@ -213,9 +213,9 @@ def main_func_of_spider():
                 weibo_count += 1
                 main_df = pd.concat([main_df, part_df], axis=0)
         # print(main_df)
-        main_df.FstrWeiboContent = main_df.FstrWeiboContent.astype(str)
-        main_df.FstrWeiboContentHash = main_df.FstrWeiboContent.apply(lambda x: hashlib.md5(x.encode()).hexdigest())
-        main_df.FstrCommentContentHash = main_df.FstrCommentContent.apply(
+        main_df['FstrWeiboContent'] = main_df.FstrWeiboContent.astype(str)
+        main_df['FstrWeiboContentHash'] = main_df.FstrWeiboContent.apply(lambda x: hashlib.md5(x.encode()).hexdigest())
+        main_df['FstrCommentContentHash'] = main_df.FstrCommentContent.apply(
             lambda x: hashlib.md5(x.encode()).hexdigest() if x is not None else None)
         local_conn = create_engine(engine.url.URL(**conn_106_mysql))
         main_df.fillna(0).to_sql('t_weibo_info', local_conn, if_exists='append', index=False)
