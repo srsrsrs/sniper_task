@@ -14,6 +14,7 @@ from sqlalchemy import create_engine, engine
 import random
 import hashlib
 from common_config import cookie_weibo_mobile, uid, conn_106_mysql
+from table_orm import TWeiboInfo, InfoDataBase, metadata
 
 # cookie_jar = requests.utils.cookiejar_from_dict(cookies, cookiejar=None, overwrite=True)
 # opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
@@ -31,10 +32,74 @@ class WeiboOfExxxx(object):
     def __init__(self):
         self.pages = 0
         self.url = "https://weibo.cn/u/{}?filter=0&page=0".format(uid)
+        self.weibo_count = 0
 
     def pages_add(self):
         self.pages += 1
         self.url = """https://weibo.cn/u/{}?filter=0&page={}""".format(uid, self.pages)
+
+    def extract_page_info(self, page_html):
+        row_dict_list = extract_info_from_page_html(page_html)
+        if not row_dict_list:
+            return None
+        for row_dict in row_dict_list:
+            row_dict['FuiWeiboId'] = self.weibo_count
+        self.weibo_count += 1
+        return row_dict_list
+
+
+def extract_info_from_page_html(html):
+    text_list = re_match(html, r'<div><span class="ctt">.*?</span></div></div><div class="s">')
+    if len(text_list) == 0:  # 即当页全为转发,留待未来处理
+        return None
+    row_dict_list = []
+    for single_text in text_list:
+        weibo_content, weibo_create_time = get_weibo_text(single_text)
+        comment_count, comment_url = get_comment_info(single_text)
+        row_dict = {}
+        if comment_count != 0:
+            comment = comment_pagely_craw(comment_url)
+            for row in range(comment_count):
+                if row > len(comment['FuiCommentId']) - 1:
+                    print("{} has a wrong comment count,maybe they delete some comments".format(comment_url))
+                    # 有时微博显示的评论条数会比实际抓取到的多,猜测可能是由于用户删除了评论,不管以后是否处理,在此先留下记录.
+                    continue
+                for key in comment.keys():
+                    row_dict[key] = comment[key][row]
+                row_dict['FuiWeiboCt'] = time_transfer(weibo_create_time)
+                row_dict['FstrWeiboContent'] = weibo_content
+                row_dict['FstrUrl'] = comment_url
+                row_dict['FuiCommentCount'] = comment_count
+                row_dict['FstrWeiboContentHash'] = hashlib.md5(row_dict['FstrWeiboContent'].encode()).hexdigest()
+                row_dict['FstrCommentContentHash'] = hashlib.md5(
+                    row_dict['FstrCommentContent'].encode()).hexdigest()
+                row_dict_list.append(row_dict.copy())  # list append dict 事实上是对dict的浅拷贝,所以每当遍历到新一行,旧的一行被更新,导致数据重复插入
+        else:
+            """part_df = pd.DataFrame(
+                data=[[comment_url, weibo_count, weibo_content, time_transfer(weibo_create_time), None, None, None,
+                       None, None, None]],
+                columns=['FstrUrl', 'FuiWeiboId', 'FstrWeiboContent', 'FuiWeiboCt', 'FuiCommentId',
+                         'FstrCommentMaker', 'FstrReplyTo', 'FstrCommentContent', 'FuiCommentCt',
+                         'FuiReplyType']
+                , index=range(1))"""
+            row_dict['FstrCommentContent'] = None
+            row_dict['FstrCommentMaker'] = None
+            row_dict['FstrReplyTo'] = None
+            row_dict['FuiCommentCt'] = None
+            row_dict['FuiCommentId'] = None
+            row_dict['FuiReplyType'] = None
+            row_dict['FuiWeiboCt'] = time_transfer(weibo_create_time)
+            row_dict['FstrWeiboContent'] = weibo_content
+            row_dict['FstrUrl'] = comment_url
+            row_dict['FuiCommentCount'] = comment_count
+            row_dict['FstrWeiboContentHash'] = hashlib.md5(row_dict['FstrWeiboContent'].encode()).hexdigest()
+            if row_dict['FstrCommentContent']:
+                row_dict['FstrCommentContentHash'] = hashlib.md5(
+                    row_dict['FstrCommentContent'].encode()).hexdigest()
+            else:
+                row_dict['FstrCommentContentHash'] = None
+            row_dict_list.append(row_dict)
+    return row_dict_list
 
 
 def crawl_page_info(url):
@@ -104,14 +169,19 @@ def time_transfer(raw_str):
 
 
 def get_comment_detail(text):
+    comment_info = {'FuiCommentId': [],
+                    'FstrCommentMaker': [],
+                    'FstrReplyTo': [],
+                    'FstrCommentContent': [],
+                    'FuiCommentCt': [],
+                    'FuiReplyType': []}
+
     text = re_match(text, r'<input type="submit" value="评论".*')
     if len(text) != 0:
         text = text[0]
     else:
-        comment_info_df = pd.DataFrame()
-        return comment_info_df
+        return comment_info
     text_list = re_match(text, r'<a href="/.*?</span></div>')
-    comment_info_df = pd.DataFrame()
     j = 0
     for i in text_list:
         reply_type = 0  # 非回复
@@ -142,17 +212,14 @@ def get_comment_detail(text):
         else:
             comment_ct = time_transfer(ct_html)
 
-        comment_info = {'FuiCommentId': j,
-                        'FstrCommentMaker': comment_maker,
-                        'FstrReplyTo': reply_to,
-                        'FstrCommentContent': comment_content,
-                        'FuiCommentCt': comment_ct,
-                        'FuiReplyType': reply_type}
-        comment_info_df = pd.concat([comment_info_df, pd.DataFrame(comment_info, index=range(1))], axis=0)
-        comment_info_df = comment_info_df.loc[:, comment_info.keys()]
-        comment_info_df['FuiCommentId'] = comment_info_df['FuiCommentId'].sort_values(ascending=False)
+        comment_info['FuiCommentId'].append(j)
+        comment_info['FstrCommentMaker'].append(comment_maker)
+        comment_info['FstrReplyTo'].append(reply_to)
+        comment_info['FstrCommentContent'].append(comment_content)
+        comment_info['FuiCommentCt'].append(comment_ct)
+        comment_info['FuiReplyType'].append(reply_type)
         j += 1
-    return comment_info_df
+    return comment_info
 
 
 def comment_pagely_craw(url):
@@ -160,67 +227,48 @@ def comment_pagely_craw(url):
     comment_max_page = re_match(comment_detail, r'<input type="submit" value="跳页" />&nbsp;.*?/(.*?)页')
     if len(comment_max_page) != 0:
         comment_max_page = int(comment_max_page[0])
-        part_df = get_comment_detail(comment_detail)
+        weibo_comment_detail = get_comment_detail(comment_detail)
         for comment_pages in range(comment_max_page - 1):
             page = comment_pages + 2
             url_new = re_match(url, r'(.*?)#')[0]
             url_new = url_new + '&page={}'.format(page)
-            page_detail = crawl_page_info(url_new)
-            part_df = pd.concat([part_df, get_comment_detail(page_detail)], axis=0)
+            page_detail = get_comment_detail(crawl_page_info(url_new))
+            for i in weibo_comment_detail.keys():
+                weibo_comment_detail[i].extend(page_detail[i])
     else:
-        part_df = get_comment_detail(comment_detail)
-    return part_df
+        weibo_comment_detail = get_comment_detail(comment_detail)
+    return weibo_comment_detail
+
+
+def try_create_table():
+    db = InfoDataBase(conn_106_mysql)
+    try:
+        len(db.DBSession().query(TWeiboInfo).all())
+    except Exception as e:
+        print(e)
+        print("\nAnd Table has already be created")
+        metadata.create_all(db.engine)
 
 
 def main_func_of_spider():
     page_now = 0
     chicken = WeiboOfExxxx()
-    weibo_count = 0
     max_page = get_max_page(crawl_page_info(chicken.url))
     while page_now < max_page:
         chicken.pages_add()
         url = chicken.url
         html = crawl_page_info(url)
-        text_list = re_match(html, r'<div><span class="ctt">.*?</span></div></div><div class="s">')
-        main_df = pd.DataFrame()
-        if len(text_list) == 0:  # 即当页全为转发,留待未来处理
-            page_now += 1
+        row_dict_list = chicken.extract_page_info(html)
+        if row_dict_list:
+            pass
+        else:
+            page_now += 1  # 当页全为转发,暂时对转发内容没有兴趣
             continue
-        # try:
-        #    max_page = get_max_page(html)
-        # except:
-        #    max_page = max_page
-        for single_text in text_list:
-            weibo_content, weibo_create_time = get_weibo_text(single_text)
-            comment_count, comment_url = get_comment_info(single_text)
-            if comment_count != 0:
-                part_df = comment_pagely_craw(comment_url)
-                part_df.insert(loc=0, column='FuiWeiboCt', value=time_transfer(weibo_create_time))
-                part_df.insert(loc=0, column='FstrWeiboContent', value=weibo_content)
-                part_df.insert(loc=0, column='FuiWeiboId', value=weibo_count)
-                part_df.insert(loc=0, column='FstrUrl', value=comment_url)
-                weibo_count += 1
-                main_df = pd.concat([main_df, part_df], axis=0)
-            else:
-                part_df = pd.DataFrame(
-                    data=[[comment_url, weibo_count, weibo_content, time_transfer(weibo_create_time), None, None, None,
-                           None, None, None]],
-                    columns=['FstrUrl', 'FuiWeiboId', 'FstrWeiboContent', 'FuiWeiboCt', 'FuiCommentId',
-                             'FstrCommentMaker', 'FstrReplyTo', 'FstrCommentContent', 'FuiCommentCt',
-                             'FuiReplyType']
-                    , index=range(1))
-
-                weibo_count += 1
-                main_df = pd.concat([main_df, part_df], axis=0)
-        # print(main_df)
-        main_df['FstrWeiboContent'] = main_df.FstrWeiboContent.astype(str)
-        main_df['FstrWeiboContentHash'] = main_df.FstrWeiboContent.apply(lambda x: hashlib.md5(x.encode()).hexdigest())
-        main_df['FstrCommentContentHash'] = main_df.FstrCommentContent.apply(
-            lambda x: hashlib.md5(x.encode()).hexdigest() if x is not None else None)
-        local_conn = create_engine(engine.url.URL(**conn_106_mysql))
-        main_df.fillna(0).to_sql('t_weibo_info', local_conn, if_exists='append', index=False)
+        for row_dict in row_dict_list:
+            InfoDataBase(conn_106_mysql).insert_data(row_dict)
         page_now += 1
 
 
 if __name__ == '__main__':
+    try_create_table()
     main_func_of_spider()
