@@ -11,10 +11,13 @@ import pandas as pd
 import time
 import numpy as np
 from sqlalchemy import create_engine, engine
+from sqlalchemy.exc import OperationalError
 import random
 import hashlib
-from common_config import cookie_weibo_mobile, uid, conn_106_mysql
+from common_config import cookie_weibo_mobile, uid, conn_106_mysql, redis_config
 from table_orm import TWeiboInfo, InfoDataBase, metadata
+import redis
+import json
 
 # cookie_jar = requests.utils.cookiejar_from_dict(cookies, cookiejar=None, overwrite=True)
 # opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
@@ -44,6 +47,8 @@ class WeiboOfExxxx(object):
             return None
         for row_dict in row_dict_list:
             row_dict['FuiWeiboId'] = self.weibo_count
+            row_dict['FstrPageUrl'] = self.url
+            row_dict['FuiIfDelete'] = 0
         self.weibo_count += 1
         return row_dict_list
 
@@ -104,13 +109,14 @@ def extract_info_from_page_html(html):
 
 def crawl_page_info(url):
     count = 0
+    url_text = None
     while 1:
         count += 1
         if count > 20:
             break
         try:
-            m = random.randint(0, 100 * count) / 100 + 0.5
-            print(m)
+            m = random.randint(0, 100 * count) / 100 + 1
+            # print(m)
             time.sleep(m)
             r = requests.get(url, cookies=cookie_weibo_mobile)
             r.headers = {'User-Agent': 'Mozilla/5.0(Windows NT 6.1;WOW64;rv:47.0) Gecko/20100101 Firefox/47.0'}
@@ -118,7 +124,12 @@ def crawl_page_info(url):
         except:
             print('time out and error page is ' + str(url))
             continue
-    return r.text
+        finally:
+            url_text = r.text
+            if url_text == '':
+                print("page is temporarily unavailable, we'll sleep about 5 minutes.")
+                time.sleep(300)
+    return url_text
 
 
 def get_weibo_text(single_text):
@@ -254,7 +265,9 @@ def main_func_of_spider():
     page_now = 0
     chicken = WeiboOfExxxx()
     max_page = get_max_page(crawl_page_info(chicken.url))
+    print(max_page)
     while page_now < max_page:
+        print(page_now)
         chicken.pages_add()
         url = chicken.url
         html = crawl_page_info(url)
@@ -262,13 +275,42 @@ def main_func_of_spider():
         if row_dict_list:
             pass
         else:
+            print("page {} is all forwarding, and link is {}".format(page_now, chicken.url))
             page_now += 1  # 当页全为转发,暂时对转发内容没有兴趣
             continue
         for row_dict in row_dict_list:
-            InfoDataBase(conn_106_mysql).insert_data(row_dict)
+            count = 0
+            while 1:
+                if count > 10:
+                    rds = redis.StrictRedis(**redis_config, db=1)
+                    rds.set(hashlib.md5(json.dumps(row_dict).encode()).hexdigest())
+                    break
+                try:
+                    InfoDataBase(conn_106_mysql).insert_data(row_dict)
+                except OperationalError:
+                    time.sleep(3)
+                    count += 1
+                    continue
+                else:
+                    break
         page_now += 1
 
 
+def insert_from_redis():
+    rds = redis.StrictRedis(**redis_config, db=1)
+    keys = rds.keys()
+    for key in keys:
+        try:
+            InfoDataBase(conn_106_mysql).insert_data(json.loads(rds.get(key)))
+        except OperationalError:
+            print(json.loads(rds.get(key)))
+            pass
+        else:
+            rds.delete(key)
+
+
 if __name__ == '__main__':
+    redis.StrictRedis(**redis_config, db=1).flushdb()
     try_create_table()
     main_func_of_spider()
+    insert_from_redis()

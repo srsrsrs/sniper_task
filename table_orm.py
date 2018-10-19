@@ -23,7 +23,7 @@ class InfoDataBase:
 class TWeiboInfo(Base):
     __tablename__ = 't_weibo_info'
 
-    FuiId = Column(BIGINT(20), primary_key=True)
+    FuiId = Column(INT(), primary_key=True, autoincrement=True)
     FstrCommentContent = Column(Text)
     FstrCommentMaker = Column(Text)
     FstrReplyTo = Column(Text)
@@ -35,7 +35,9 @@ class TWeiboInfo(Base):
     FuiReplyType = Column(BIGINT(20))
     FuiWeiboId = Column(BIGINT(20))
     FstrUrl = Column(String(1024))
+    FstrPageUrl = Column(String(1024))
     FstrWeiboContentHash = Column(String(1024))
     FstrCommentContentHash = Column(String(1024))
+    FuiIfDelete = Column(INT(), nullable=False, default=0)
     FstrUpdateTime = Column(TIMESTAMP, nullable=False,
                             server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
