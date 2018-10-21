@@ -3,6 +3,7 @@ from common_config import redis_config, conn_106_mysql
 from sqlalchemy import engine, create_engine, func
 from table_orm import TWeiboInfo, InfoDataBase  # orm对象,可直接用sqlacodegen生成
 from weibo_mobile_spider import *
+from comm_func import send_mail
 
 
 class WeiboContentListener(object):
@@ -38,6 +39,8 @@ def main_func_of_spider():
                 insert_row_dict_list = [to_insert_dict for to_insert_dict in row_dict_list if
                                         to_insert_dict['FstrWeiboContent'] == content]
                 for row_dict in insert_row_dict_list:
+                    send_mail(subject="发现新微博,内容为'{}'".format(row_dict['FstrWeiboContent']),
+                              content=content)
                     count = 0
                     while 1:
                         if count > 10:
@@ -52,4 +55,12 @@ def main_func_of_spider():
                             continue
                         else:
                             break
+            else:
+                time.sleep(300)
+                break
         page_now += 1
+
+
+if __name__ == '__main__':
+    while 1:
+        main_func_of_spider()
