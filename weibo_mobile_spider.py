@@ -24,7 +24,7 @@ import json
 
 ssl._create_default_https_context: ssl._create_unverified_context
 uid = int(str(uid)[6:])
-
+# 一开始在common_config里面配置的是sina PC端UID,移动端UID为PC端UID6位以后数字
 
 def re_match(html, qual):
     quallist = re.findall(qual, html)
