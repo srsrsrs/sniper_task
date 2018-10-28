@@ -15,7 +15,7 @@ class WeiboCommentListener(object):
     def get_key_count(self):
         session = self.db.DBSession()
         url_pairs = [(i[0].FstrUrl, i[1]) for i in
-                     session.query(TWeiboInfo, func.count(TWeiboInfo.FstrUrl)).group_by(TWeiboInfo.FstrUrl).all()]
+                     session.query(TWeiboInfo, func.count(TWeiboInfo.FstrUrl)).group_by(TWeiboInfo.FstrUrl).order_by(TWeiboInfo.FuiWeiboCt.desc()).all()]
         return url_pairs
 
 
