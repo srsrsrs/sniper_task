@@ -24,6 +24,8 @@ import json
 
 ssl._create_default_https_context: ssl._create_unverified_context
 uid = int(str(uid)[6:])
+
+
 # 一开始在common_config里面配置的是sina PC端UID,移动端UID为PC端UID6位以后数字
 
 def re_match(html, qual):
@@ -169,6 +171,11 @@ def delete_html_info(raw_str):
 
 
 def time_transfer(raw_str):
+    if "今天" in raw_str:
+        raw_str = time.strftime('%m%d') + raw_str.strip('今天')
+    elif "分钟前" in raw_str:
+        raw_str = time.mktime() - int(raw_str.strip("分钟前")) * 60
+
     try:
         transfered_time = int(time.mktime(time.strptime(raw_str, '%Y-%m-%d %H:%M:%S')))
     except:
@@ -215,13 +222,7 @@ def get_comment_detail(text):
                     comment_content = delete_html_info(re_match(comment_body, r'</a> 的赞:(.*)')[0])
                     reply_type = 2  # 回复赞
         ct_html = re_match(i, r'<span class="ct">(.*?)&nbsp;')[0]
-        if "今天" in ct_html:
-            comment_ct = time_transfer(
-                time.strftime('%m%d') + ct_html.strip('今天'))
-        elif "分钟前" in ct_html:
-            comment_ct = time.mktime() - int(ct_html.strip("分钟前")) * 60
-        else:
-            comment_ct = time_transfer(ct_html)
+        comment_ct = time_transfer(ct_html)
 
         comment_info['FuiCommentId'].append(j)
         comment_info['FstrCommentMaker'].append(comment_maker)
